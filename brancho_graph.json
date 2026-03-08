@@ -1,0 +1,13 @@
+{
+  "nodes": [
+    "main.py",
+    "auth.py",
+    "database.rs",
+    "calculate_logic()"
+  ],
+  "edges": [
+    [0, 1],
+    [0, 2],
+    [1, 3]
+  ]
+}
