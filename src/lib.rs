@@ -28,7 +28,6 @@ impl BranchoRAG {
 
     /// Scans a directory recursively, ignoring common "junk" folders.
     fn scan_folder(&mut self, path: String) -> PyResult<()> {
-        // Folders to skip to prevent indexing thousands of unnecessary files
         let ignore_list = ["target", ".git", ".venv", "__pycache__", "env", "node_modules"];
 
         for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
