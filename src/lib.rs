@@ -1,14 +1,20 @@
 use pyo3::prelude::*;
 use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Write;
 use walkdir::WalkDir;
 
 // --- BLOCK 1: DATA ---
+#[derive(Serialize, Deserialize, Clone)]
+struct FileNode {
+    path: String,
+    content: String,
+}
+
 #[derive(Serialize, Deserialize)]
 struct GraphData {
-    nodes: Vec<String>,
+    nodes: Vec<FileNode>,
     edges: Vec<(usize, usize)>,
 }
 
@@ -27,15 +33,16 @@ impl BranchoRAG {
         }
     }
 
-    /// Scans a directory recursively, ignoring common "junk" folders.
     fn scan_folder(&mut self, path: String) -> PyResult<()> {
         let ignore_list = ["target", ".git", ".venv", "__pycache__", "env", "node_modules"];
 
-        // HashSet gives O(1) duplicate detection instead of O(n) Vec scan
-        let mut seen: HashSet<String> = self.data.nodes.iter().cloned().collect();
+        // Skip files larger than 1MB to avoid bloating memory with minified JS, logs, etc.
+        const MAX_FILE_BYTES: u64 = 1_000_000;
+
+        // Track paths we've already seen to avoid duplicates
+        let mut seen: HashSet<String> = self.data.nodes.iter().map(|n| n.path.clone()).collect();
 
         for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-            // Check components so "targeting" doesn't match "target", etc.
             let is_ignored = entry.path().components().any(|c| {
                 ignore_list.contains(&c.as_os_str().to_str().unwrap_or(""))
             });
@@ -45,8 +52,22 @@ impl BranchoRAG {
 
             if entry.file_type().is_file() {
                 let path_str = entry.path().display().to_string();
-                if seen.insert(path_str.clone()) {
-                    self.data.nodes.push(path_str);
+
+                if !seen.contains(&path_str) {
+                    // Skip files that are too large before attempting to read them
+                    let size = entry.metadata().map(|m| m.len()).unwrap_or(u64::MAX);
+                    if size > MAX_FILE_BYTES {
+                        continue;
+                    }
+
+                    // read_to_string naturally skips binary files that aren't valid UTF-8
+                    if let Ok(content) = fs::read_to_string(entry.path()) {
+                        self.data.nodes.push(FileNode {
+                            path: path_str.clone(),
+                            content,
+                        });
+                        seen.insert(path_str);
+                    }
                 }
             }
         }
