@@ -23,6 +23,9 @@ struct BranchoRAG {
     data: GraphData,
 }
 
+const IGNORE_LIST: &[&str] = &["target", ".git", ".venv", "__pycache__", "env", "node_modules"];
+const MAX_FILE_BYTES: u64 = 1_000_000; // 1MB — skip minified JS, logs, binaries, etc.
+
 // --- BLOCK 2: METHODS ---
 #[pymethods]
 impl BranchoRAG {
@@ -34,21 +37,15 @@ impl BranchoRAG {
     }
 
     fn scan_folder(&mut self, path: String) -> PyResult<()> {
-        let ignore_list = ["target", ".git", ".venv", "__pycache__", "env", "node_modules"];
-
-        // Skip files larger than 1MB to avoid bloating memory with minified JS, logs, etc.
-        const MAX_FILE_BYTES: u64 = 1_000_000;
 
         // Track paths we've already seen to avoid duplicates
         let mut seen: HashSet<String> = self.data.nodes.iter().map(|n| n.path.clone()).collect();
 
-        let walker = WalkDir::new(path).into_iter();
-
         // filter_entry prunes ignored dirs entirely — WalkDir won't descend into them at all,
         // which is much faster than checking every file inside .git, node_modules, etc.
-        for entry in walker.filter_entry(|e| {
+        for entry in WalkDir::new(path).into_iter().filter_entry(|e| {
             let name = e.file_name().to_str().unwrap_or("");
-            !ignore_list.contains(&name)
+            !IGNORE_LIST.contains(&name)
         }).filter_map(|e| e.ok()) {
             if !entry.file_type().is_file() {
                 continue;
